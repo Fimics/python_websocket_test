@@ -13,7 +13,7 @@ SERVICE_ID_AUDIO = 10002
 # video
 SERVICE_ID_VIDEO = 10003
 # info
-SERVICE_ID_ERROR = 10004
+SERVICE_ID_INFO = 10004
 
 # 全局变量来存储最新的图像
 latest_image = None
@@ -27,7 +27,7 @@ latest_audio = None
 
 # 控制是否显示图像
 is_show_images = True
-is_show_video_log = False
+is_show_video_log = True
 is_show_audio_log = True
 
 
@@ -72,25 +72,25 @@ async def echo(websocket, path):
 async def process_video(message: bytes):
     global latest_image, frame_count
 
-    index = int.from_bytes(message[4:12], 'big')
-    data_len = int.from_bytes(message[12:16], 'big')
-    img_width = int.from_bytes(message[16:20], 'big')
-    img_height = int.from_bytes(message[20:24], 'big')
+    index = int.from_bytes(message[4:12], 'big', signed=True)
+    data_len = int.from_bytes(message[12:16], 'big', signed=True)
+    img_width = int.from_bytes(message[16:20], 'big', signed=True)
+    img_height = int.from_bytes(message[20:24], 'big', signed=True)
     hasFace = bool(int.from_bytes(message[24:28], 'big'))
-    faceNum = int.from_bytes(message[28:32], 'big')
+    faceNum = int.from_bytes(message[28:32], 'big', signed=True)
     faceIndex = int.from_bytes(message[32:40], 'big', signed=True)
-    w = int.from_bytes(message[40:44], 'big')
-    h = int.from_bytes(message[44:48], 'big')
-    x = int.from_bytes(message[48:52], 'big')
-    y = int.from_bytes(message[52:56], 'big')
-    mouthW = int.from_bytes(message[56:60], 'big')
-    mouthH = int.from_bytes(message[60:64], 'big')
-    mouthX = int.from_bytes(message[64:68], 'big')
-    mouthY = int.from_bytes(message[68:72], 'big')
+    w = int.from_bytes(message[40:44], 'big', signed=True)
+    h = int.from_bytes(message[44:48], 'big', signed=True)
+    x = int.from_bytes(message[48:52], 'big', signed=True)
+    y = int.from_bytes(message[52:56], 'big', signed=True)
+    mouthW = int.from_bytes(message[56:60], 'big', signed=True)
+    mouthH = int.from_bytes(message[60:64], 'big', signed=True)
+    mouthX = int.from_bytes(message[64:68], 'big', signed=True)
+    mouthY = int.from_bytes(message[68:72], 'big', signed=True)
 
     if is_show_video_log:
         print(f"""
-        video Frame Index: {index}
+        video ----------------->Frame Index: {index}
         Data Length: {data_len}
         Image Width: {img_width}
         Image Height: {img_height}
@@ -108,7 +108,16 @@ async def process_video(message: bytes):
         """)
 
     video_data = message[72:72 + data_len]
-    img_np = np.frombuffer(video_data, dtype=np.uint8).reshape((img_height, img_width, 3))
+    img_np = np.frombuffer(video_data, dtype=np.uint8).reshape((img_height, img_width, 3)).copy()
+
+    # 如果检测到人脸，绘制边框
+    # 如果检测到人脸，绘制边框
+    if hasFace & faceNum>=1:
+        # 人脸边框的右下角坐标
+        x2 = x + w
+        y2 = y + h
+        # 绘制矩形
+        cv2.rectangle(img_np, (x, y), (x2, y2), (0, 255, 0), 2)
 
     latest_image = img_np
 
@@ -126,11 +135,24 @@ async def process_audio(message: bytes):
 
     if is_show_audio_log:
         print(f"""
-                audio Frame data_len: {data_len}
+                audio Frame data_len ------------------>: {data_len}
                 vad_status: {vad_status}
                 audio_data_len: {len(audio_data)}
                 """)
 
+async def process_info(message: bytes):
+    data_len = int.from_bytes(message[4:8], byteorder='big')
+    vad_status = int.from_bytes(message[8:12], byteorder='big')
+    audio_data = message[12:12 + data_len]
+    latest_audio = audio_data
+    # 这里可以添加音频的处理代码，例如保存到文件，或者播放等
+
+    if is_show_audio_log:
+        print(f"""
+                audio Frame data_len: {data_len}
+                vad_status: {vad_status}
+                audio_data_len: {len(audio_data)}
+                """)
 
 async def process_stream(message: str):
     print(message)
