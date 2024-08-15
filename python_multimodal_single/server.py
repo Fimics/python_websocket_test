@@ -66,8 +66,9 @@ async def echo(websocket, path):
             else:
                 print("未知服务ID")
     except websockets.exceptions.ConnectionClosedError as e:
-        print(f"连接意外关闭: {e}")
-
+        print(f"连接关闭: {e}")
+    except Exception as e:
+        print(f"意外错误: {e}")
 
 async def process_video(message: bytes):
     global latest_image, frame_count
@@ -89,23 +90,25 @@ async def process_video(message: bytes):
     mouthY = int.from_bytes(message[68:72], 'big', signed=True)
 
     if is_show_video_log:
-        print(f"""
-        video ----------------->Frame Index: {index}
-        Data Length: {data_len}
-        Image Width: {img_width}
-        Image Height: {img_height}
-        Has Face: {hasFace}
-        Face Number: {faceNum}
-        Face Index: {faceIndex}
-        W: {w}
-        H: {h}
-        X: {x}
-        Y: {y}
-        Mouth W: {mouthW}
-        Mouth H: {mouthH}
-        Mouth X: {mouthX}
-        Mouth Y: {mouthY}
-        """)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        print(f""" {current_time} video ----------------->Frame Index: {index} Data Length: {data_len}""")
+        # print(f"""
+        # video ----------------->Frame Index: {index}
+        # Data Length: {data_len}
+        # Image Width: {img_width}
+        # Image Height: {img_height}
+        # Has Face: {hasFace}
+        # Face Number: {faceNum}
+        # Face Index: {faceIndex}
+        # W: {w}
+        # H: {h}
+        # X: {x}
+        # Y: {y}
+        # Mouth W: {mouthW}
+        # Mouth H: {mouthH}
+        # Mouth X: {mouthX}
+        # Mouth Y: {mouthY}
+        # """)
 
     video_data = message[72:72 + data_len]
     img_np = np.frombuffer(video_data, dtype=np.uint8).reshape((img_height, img_width, 3)).copy()
@@ -133,12 +136,14 @@ async def process_audio(message: bytes):
     latest_audio = audio_data
     # 这里可以添加音频的处理代码，例如保存到文件，或者播放等
 
-    if is_show_audio_log:
-        print(f"""
-                audio Frame data_len ------------------>: {data_len}
-                vad_status: {vad_status}
-                audio_data_len: {len(audio_data)}
-                """)
+    # if is_show_audio_log:
+    #     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    #     print(f"""{current_time} audio Frame data_len ------------------>: {data_len} audio_data_len: {len(audio_data)} """)
+        # print(f"""
+        #         audio Frame data_len ------------------>: {data_len}
+        #         vad_status: {vad_status}
+        #         audio_data_len: {len(audio_data)}
+        #         """)
 
 async def process_info(message: bytes):
     data_len = int.from_bytes(message[4:8], byteorder='big')
