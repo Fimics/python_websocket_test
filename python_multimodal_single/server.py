@@ -17,11 +17,9 @@ SERVICE_ID_INFO = 10004
 
 # 全局变量来存储最新的图像
 latest_image = None
-
 # 用于计数的全局变量和锁
 frame_count = 0
 frame_count_lock = asyncio.Lock()
-
 # 全局变量，用于存储音频数据
 latest_audio = None
 
@@ -30,15 +28,19 @@ is_show_images = True
 is_show_video_log = True
 is_show_audio_log = True
 
+image_event = asyncio.Event()
+
 
 async def display_images():
     global latest_image
     while True:
+        await image_event.wait()
         if is_show_images and latest_image is not None:
             cv2.imshow('Preview', latest_image)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
             latest_image = None  # 重置图像
+            image_event.clear()  # 重置事件状态
         await asyncio.sleep(0.01)  # 短暂休眠以允许其他协程运行
 
 
@@ -69,6 +71,7 @@ async def echo(websocket, path):
         print(f"连接关闭: {e}")
     except Exception as e:
         print(f"意外错误: {e}")
+
 
 async def process_video(message: bytes):
     global latest_image, frame_count
@@ -123,6 +126,7 @@ async def process_video(message: bytes):
         cv2.rectangle(img_np, (x, y), (x2, y2), (0, 255, 0), 2)
 
     latest_image = img_np
+    image_event.set()  # 触发事件，通知display_images更新图像
 
     async with frame_count_lock:
         frame_count += 1
@@ -145,6 +149,7 @@ async def process_audio(message: bytes):
         #         audio_data_len: {len(audio_data)}
         #         """)
 
+
 async def process_info(message: bytes):
     data_len = int.from_bytes(message[4:8], byteorder='big')
     vad_status = int.from_bytes(message[8:12], byteorder='big')
@@ -158,6 +163,7 @@ async def process_info(message: bytes):
                 vad_status: {vad_status}
                 audio_data_len: {len(audio_data)}
                 """)
+
 
 async def process_stream(message: str):
     print(message)
@@ -184,3 +190,6 @@ async def main():
 
 
 asyncio.run(main())
+
+if __name__ == "__main__":
+    asyncio.run(main())
