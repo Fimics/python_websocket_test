@@ -52,6 +52,27 @@ async def count_frames_per_second():
             frame_count = 0
         await asyncio.sleep(1)
 
+
+async def echo(websocket, path):
+    global latest_image, frame_count, latest_audio
+    try:
+        async for message in websocket:
+            if isinstance(message,bytes):
+                service_id = int.from_bytes(message[0:4], byteorder='big')
+                if service_id == SERVICE_ID_VIDEO:
+                    await process_video(message)
+                elif service_id == SERVICE_ID_AUDIO:
+                    await process_audio(message)
+            elif isinstance(message,str):
+                await process_stream(message)
+            else:
+                print("未知服务ID")
+    except websockets.exceptions.ConnectionClosedError as e:
+        print(f"连接关闭: {e}")
+    except Exception as e:
+        print(f"意外错误: {e}")
+
+
 async def process_video(message: bytes):
     global latest_image, frame_count
 
@@ -71,9 +92,9 @@ async def process_video(message: bytes):
     mouthX = int.from_bytes(message[64:68], 'big', signed=True)
     mouthY = int.from_bytes(message[68:72], 'big', signed=True)
 
-    # if is_show_video_log:
-    #     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    #     print(f""" {current_time} video ----------------->Frame Index: {index} Data Length: {data_len}""")
+    if is_show_video_log:
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        print(f""" {current_time} video ----------------->Frame Index: {index} Data Length: {data_len}""")
         # print(f"""
         # video ----------------->Frame Index: {index}
         # Data Length: {data_len}
@@ -93,7 +114,23 @@ async def process_video(message: bytes):
         # """)
 
     video_data = message[72:72 + data_len]
-    img_np = np.frombuffer(video_data, dtype=np.uint8).reshape((img_height, img_width, 3)).copy()
+    # img_np = np.frombuffer(video_data, dtype=np.uint8).reshape((img_height, img_width, 3)).copy()
+
+    # 创建空的YUV图像（NV21）
+    yuv_img = np.empty((img_height + img_height // 2, img_width), dtype=np.uint8)
+
+    # 将Y分量填充到YUV图像
+    y_plane_size = img_width * img_height
+    yuv_img[:img_height, :] = np.frombuffer(video_data[:y_plane_size], dtype=np.uint8).reshape((img_height, img_width))
+
+    # 将UV分量填充到YUV图像
+    uv_plane_size = img_width * img_height // 2
+    yuv_img[img_height:, :] = np.frombuffer(video_data[y_plane_size:y_plane_size + uv_plane_size],
+                                            dtype=np.uint8).reshape((img_height // 2, img_width))
+
+    # 将NV21转换为BGR
+    img_bgr = cv2.cvtColor(yuv_img, cv2.COLOR_YUV2BGR_NV21)
+
 
     # 如果检测到人脸，绘制边框
     # 如果检测到人脸，绘制边框
@@ -102,9 +139,9 @@ async def process_video(message: bytes):
         x2 = x + w
         y2 = y + h
         # 绘制矩形
-        cv2.rectangle(img_np, (x, y), (x2, y2), (0, 255, 0), 2)
+        cv2.rectangle(img_bgr, (x, y), (x2, y2), (0, 255, 0), 2)
 
-    latest_image = img_np
+    latest_image = img_bgr
     image_event.set()  # 触发事件，通知display_images更新图像
 
     async with frame_count_lock:
@@ -115,18 +152,20 @@ async def process_audio(message: bytes):
     global latest_audio
     data_len = int.from_bytes(message[4:8], byteorder='big')
     vad_status = int.from_bytes(message[8:12], byteorder='big')
-    audio_data = message[12:12 + data_len]
+    speak_index = int.from_bytes(message[12:16], byteorder='big')
+    audio_data = message[16:16 + data_len]
     latest_audio = audio_data
     # 这里可以添加音频的处理代码，例如保存到文件，或者播放等
 
-    # if is_show_audio_log:
-        # current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        # print(f"""{current_time} audio Frame data_len ------------------>: {data_len} audio_data_len: {len(audio_data)} """)
-        # print(f"""
-        #         audio Frame data_len ------------------>: {data_len}
-        #         vad_status: {vad_status}
-        #         audio_data_len: {len(audio_data)}
-        #         """)
+    if is_show_audio_log:
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        print(f"""{current_time} audio Frame data_len ------------------>: {data_len} audio_data_len: {len(audio_data)} """)
+        print(f"""
+                audio Frame data_len ------------------>: {data_len}
+                vad_status: {vad_status}
+                speak_index: {speak_index}
+                audio_data_len: {len(audio_data)}
+                """)
 
 
 async def process_info(message: bytes):
@@ -148,35 +187,18 @@ async def process_stream(message: str):
     print(message)
 
 
-async def client(uri):
-    global latest_image, frame_count, latest_audio
-    async with websockets.connect(uri,max_size=None) as websocket:
-        try:
-            async for message in websocket:
-                if isinstance(message, bytes):
-                    service_id = int.from_bytes(message[0:4], byteorder='big')
-                    if service_id == SERVICE_ID_VIDEO:
-                        await process_video(message)
-                    elif service_id == SERVICE_ID_AUDIO:
-                        await process_audio(message)
-                elif isinstance(message, str):
-                    await process_stream(message)
-                else:
-                    print("未知服务ID")
-        except websockets.exceptions.ConnectionClosedError as e:
-            print(f"连接关闭: {e}")
-        except Exception as e:
-            print(f"意外错误: {e}")
-
+async def start_server():
+    max_message_size = None
+    server = await websockets.serve(
+        echo, "192.168.2.173", 8766, max_size=max_message_size)
+    await server.wait_closed()
 
 
 async def main():
-    # WebSocket服务器地址
-    uri = "ws://192.168.2.93:49999"  # WebSocket 服务器的地址
     # 启动图像显示协程
     image_display_task = asyncio.create_task(display_images())
     # 启动WebSocket服务器
-    server_task = asyncio.create_task(client(uri))
+    server_task = asyncio.create_task(start_server())
     # 启动每秒计数器
     counter_task = asyncio.create_task(count_frames_per_second())
 
