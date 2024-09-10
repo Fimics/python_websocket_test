@@ -1,4 +1,7 @@
 import asyncio
+import os
+import threading
+
 import websockets
 import cv2
 import numpy as np
@@ -128,19 +131,48 @@ async def process_audio(message: bytes):
     data_len = int.from_bytes(message[4:8], byteorder='big')
     vad_status = int.from_bytes(message[8:12], byteorder='big')
     speak_index = int.from_bytes(message[12:16], byteorder='big')
-    audio_data = message[16:16 + data_len]
+    has_face = int.from_bytes(message[16:20], byteorder='big')
+    audio_data = message[20:20 + data_len]
     latest_audio = audio_data
-    # 这里可以添加音频的处理代码，例如保存到文件，或者播放等
+    # 这里可以添加音频的处理代码，例如保存到文件，或者播放等 qo4kp48q7wui.g2.live.glana.link:20647
 
-    # if is_show_audio_log:
-    #     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    #     print(f"""{current_time} audio Frame data_len ------------------>: {data_len} audio_data_len: {len(audio_data)} """)
-    #     print(f"""
-    #             audio Frame data_len ------------------>: {data_len}
-    #             vad_status: {vad_status}
-    #             speak_index: {speak_index}
-    #             audio_data_len: {len(audio_data)}
-    #             """)
+    if speak_index == 0:
+        save_as_pcm_file(audio_data, "resource/pcm_1.pcm")
+    elif speak_index == 1:
+        save_as_pcm_file(audio_data, "resource/pcm_2.pcm")
+    elif speak_index == 2:
+        save_as_pcm_file(audio_data, "resource/pcm_3.pcm")
+    else:
+        pass
+
+    if is_show_audio_log:
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        print(
+            f"""{current_time} audio Frame data_len ------------------>: {data_len} audio_data_len: {len(audio_data)} """)
+        print(f"""
+                audio Frame data_len ------------------>: {data_len}
+                vad_status: {vad_status}
+                speak_index: {speak_index}
+                has_face: {has_face}
+                audio_data_len: {len(audio_data)}
+                """)
+
+
+# 确保目录存在，如果不存在则创建
+def ensure_directory_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+
+# 将bytes数据追加保存为16位单声道PCM文件
+def save_as_pcm_file(data, file_path):
+    # 转换数据为16位整数
+    pcm_data = np.frombuffer(data, dtype=np.int16)
+
+    # 将数据以追加模式保存到PCM文件
+    with open(file_path, 'ab') as pcm_file:
+        pcm_data.tofile(pcm_file)
+
 
 
 
@@ -171,7 +203,7 @@ async def client(uri):
 
 async def main():
     # WebSocket服务器地址
-    uri = "ws://192.168.2.93:39999"  # WebSocket 服务器的地址
+    uri = "ws://192.168.2.240:39999"  # WebSocket 服务器的地址
     # 启动图像显示协程
     image_display_task = asyncio.create_task(display_images())
     # 启动WebSocket服务器
