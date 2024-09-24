@@ -1,12 +1,16 @@
 import socket
-import subprocess
+import os
 
 # 定义服务器地址和端口
 HOST = '0.0.0.0'  # 监听所有网络接口
 PORT = 18888
 
-# 关闭占用指定端口的进程
-subprocess.run(["fuser", "-k", "tcp/{}".format(PORT)])
+# 尝试关闭占用指定端口的进程
+try:
+    os.system(f'lsof -ti tcp:{PORT} | xargs kill')
+    print(f"Closed process using port {PORT}")
+except Exception as e:
+    print(f"无法关闭占用端口{PORT}的进程：{e}")
 
 # 创建 socket 对象
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
